@@ -1,0 +1,27 @@
+{
+	"schemaVersion": 1,
+	"id": "player-pearls",
+	"version": "${version}",
+	"name": "Player Pearls",
+	"description": "A vanilla-friendly way to teleport/warp to your friends in survival.",
+	"authors": [
+		"faker"
+	],
+	"contact": {
+		"discord": "fakerer"
+	},
+	"license": "MIT",
+	"icon": "assets/player-pearls/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"faker.playerpearls.PlayerPearls"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.16.9",
+		"minecraft": ">=1.21",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}
