@@ -10,15 +10,14 @@ import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.EnderPearlItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.sound.SoundCategory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 public class PlayerPearls implements ModInitializer {
     public static final String MOD_ID = "player-pearls";
@@ -27,15 +26,17 @@ public class PlayerPearls implements ModInitializer {
     private static final Map<UUID, Integer> pendingPlayers = new HashMap<>();
     private static final Map<UUID, Integer> originalXp = new HashMap<>();
     private static final Map<UUID, Float> originalProgress = new HashMap<>();  // Add this at class level
+    private static final Map<UUID, Integer> drainedXpPoints = new HashMap<>();
 
     private static final float LOOKING_UP_PITCH = -90.0F;
+    private static final float LOOKING_DOWN_PITCH = 90.0F;
     private static final int MAX_XP_LOSS = 5;
 
     private static final Map<UUID, Double> lastPosX = new HashMap<>();
     private static final Map<UUID, Double> lastPosZ = new HashMap<>();
     private static final Map<UUID, Double> lastPosY = new HashMap<>();
 
-    private static final double MOVEMENT_THRESHOLD = 2.0; // 2 blocks
+    private static final double MOVEMENT_THRESHOLD = 2.0; // 2 block
     private static final double DRAIN_RATE = 0.009; // 0.5% of progress bar per tick
 
     @Override
@@ -48,11 +49,17 @@ public class PlayerPearls implements ModInitializer {
                 if (!world.isClient) {
                     ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
                     float pitch = serverPlayer.getPitch(1.0F);
+                    UUID playerUUID = serverPlayer.getUuid();
 
                     // Check if looking up and sneaking for pending state
                     if (pitch <= (LOOKING_UP_PITCH + 10.0F) && pitch >= (LOOKING_UP_PITCH - 10.0F)) {
-                        // Only enter pending state if sneaking
+                        // Only enter pending state if sneaking and not already pending
                         if (serverPlayer.isSneaking()) {
+                            // If already pending, let vanilla handle the pearl throw
+                            if (pendingPlayers.containsKey(playerUUID)) {
+                                return ActionResult.PASS;
+                            }
+
                             // Check XP before allowing pearl throw
                             if (serverPlayer.experienceLevel <= 0) {
                                 world.playSound(
@@ -71,6 +78,7 @@ public class PlayerPearls implements ModInitializer {
                             LOGGER.info("Player {} threw an ender pearl while sneaking and looking up. Pitch: {}",
                                     serverPlayer.getName().getString(), pitch);
                             itemStack.decrement(1);
+                            serverPlayer.sendMessage(Text.literal("Pending teleport . . ."), true);
 
                             // Play throw sound for everyone
                             world.playSound(
@@ -108,6 +116,7 @@ public class PlayerPearls implements ModInitializer {
             if (pendingPlayers.containsKey(playerUUID)) {
                 if (shouldCancelTeleport(player)) {
                     cancelTeleport(player);
+                    player.sendMessage(Text.literal("Teleport request cancelled"), true);
                     return;
                 }
 
@@ -116,11 +125,14 @@ public class PlayerPearls implements ModInitializer {
 
                 server.getPlayerManager().getPlayerList().stream()
                         .filter(otherPlayer -> !otherPlayer.getUuid().equals(playerUUID))
+                        .filter(otherPlayer -> !pendingPlayers.containsKey(otherPlayer.getUuid()))  // Make sure acceptor isn't pending
                         .filter(ServerPlayerEntity::isSneaking)
-                        .filter(otherPlayer -> otherPlayer.getPitch(1.0F) <= LOOKING_UP_PITCH).findFirst()
+                        .filter(otherPlayer -> otherPlayer.getPitch(1.0F) >= LOOKING_DOWN_PITCH)  // Changed to looking down
+                        .findFirst()
                         .ifPresent(targetPlayer -> {
                             LOGGER.info("Found target player {} to teleport player {}",
                                     targetPlayer.getName().getString(), player.getName().getString());
+                            targetPlayer.sendMessage(Text.literal("Accepting teleport request..."), true);
                             teleportPlayer(player, targetPlayer);
                         });
             }
@@ -128,12 +140,13 @@ public class PlayerPearls implements ModInitializer {
 
     }
 
+    private static int pendingCounter = 0;  // Add at class level
 
     private void RegisterPlayerRequest(ServerPlayerEntity player) {
         UUID playerUUID = player.getUuid();
-        pendingPlayers.put(playerUUID, 0);
+        pendingPlayers.put(playerUUID, pendingCounter++);  // Use counter for ordering
         originalXp.put(playerUUID, player.experienceLevel);
-        originalProgress.put(playerUUID, player.experienceProgress);  // Store original progress
+        originalProgress.put(playerUUID, player.experienceProgress);
         lastPosX.put(playerUUID, player.getX());
         lastPosZ.put(playerUUID, player.getZ());
         lastPosY.put(playerUUID, player.getY());
@@ -183,7 +196,8 @@ public class PlayerPearls implements ModInitializer {
     private void cleanupPlayerState(UUID playerUUID) {
         pendingPlayers.remove(playerUUID);
         originalXp.remove(playerUUID);
-        originalProgress.remove(playerUUID);  // Clean up progress
+        originalProgress.remove(playerUUID);
+        drainedXpPoints.remove(playerUUID);  // Clean up drained XP
         lastPosX.remove(playerUUID);
         lastPosZ.remove(playerUUID);
         lastPosY.remove(playerUUID);
@@ -213,28 +227,32 @@ public class PlayerPearls implements ModInitializer {
         LOGGER.info("Teleport canceled for player {}", player.getName().getString());
     }
 
-private void spawnXpOrbs(ServerPlayerEntity player, double x, double y, double z, int totalXp) {
-    int numOrbs = 5 + (int)(Math.random() * 11); // Random number between 5 and 15
-    int xpPerOrb = totalXp / numOrbs;
-    for (int i = 0; i < numOrbs; i++) {
-        double spreadX = x + (Math.random() - 0.5);
-        double spreadZ = z + (Math.random() - 0.5);
-        ExperienceOrbEntity orb = new ExperienceOrbEntity(
-                player.getWorld(),
-                spreadX,
-                y + 0.5,
-                spreadZ,
-                xpPerOrb
-        );
-        player.getWorld().spawnEntity(orb);
+    private void spawnXpOrbs(ServerPlayerEntity player, double x, double y, double z, int totalXp) {
+        int numOrbs = (int)(Math.random() * 11); // Random number between 5 and 15
+        int xpPerOrb = Math.max(1, totalXp / numOrbs); // Ensure at least 1 XP per orb
+
+        for (int i = 0; i < numOrbs; i++) {
+            double spreadX = x + (Math.random() - 0.5) * 2;
+            double spreadZ = z + (Math.random() - 0.5) * 2;
+            ExperienceOrbEntity orb = new ExperienceOrbEntity(
+                    player.getWorld(),
+                    spreadX,
+                    y + 0.5,
+                    spreadZ,
+                    xpPerOrb
+            );
+            player.getWorld().spawnEntity(orb);
+        }
     }
-    LOGGER.info("Spawned {} XP orbs for player {}", numOrbs, player.getName().getString());
-}
 
     private void drainXp(ServerPlayerEntity player) {
         int requiredXpForNextLevel = player.getNextLevelExperience();
         int pointsToDrain = Math.max(1, (int)(requiredXpForNextLevel * DRAIN_RATE));
         int currentLevelXp = (int) (player.experienceProgress * player.getNextLevelExperience());
+        UUID playerUUID = player.getUuid();
+
+        // Keep track of drained XP
+        drainedXpPoints.merge(playerUUID, pointsToDrain, Integer::sum);
 
         if (currentLevelXp >= pointsToDrain) {
             player.addExperience(-pointsToDrain);
@@ -246,12 +264,13 @@ private void spawnXpOrbs(ServerPlayerEntity player, double x, double y, double z
         }
 
         // Play XP sound only for the draining player
-        player.playSound(
+        float pitch = 0.8F + (float) Math.random() * 0.4F;
+        player.playSoundToPlayer(
                 SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP,
-                0.1F,
-                1.0F
+                SoundCategory.PLAYERS,
+                0.05F, // Reduced volume
+                pitch
         );
-
     }
 
     private void teleportPlayer(ServerPlayerEntity requestingPlayer, ServerPlayerEntity targetPlayer) {
@@ -260,12 +279,13 @@ private void spawnXpOrbs(ServerPlayerEntity player, double x, double y, double z
         double originalY = requestingPlayer.getY();
         double originalZ = requestingPlayer.getZ();
 
-        int originalLevel = originalXp.get(playerUUID);
-        int currentLevel = requestingPlayer.experienceLevel;
-        int xpDrained = originalLevel - currentLevel;
-        int xpToDrop = xpDrained / 2;
+        // Get total drained XP
+        int totalDrainedXp = drainedXpPoints.getOrDefault(playerUUID, 0);
+        int xpPerLocation = totalDrainedXp / 2;
 
+        // Teleport the player
         requestingPlayer.teleport(targetPlayer.getX(), targetPlayer.getY(), targetPlayer.getZ(), true);
+        requestingPlayer.sendMessage(Text.literal("Teleported!"), true);
 
         // Play teleport sound for everyone
         requestingPlayer.getWorld().playSound(
@@ -279,8 +299,10 @@ private void spawnXpOrbs(ServerPlayerEntity player, double x, double y, double z
                 1.0F
         );
 
-        if (xpToDrop > 0) {
-            spawnXpOrbs(requestingPlayer, originalX, originalY, originalZ, xpToDrop);
+        // Spawn XP orbs at both locations
+        if (xpPerLocation > 0) {
+            spawnXpOrbs(requestingPlayer, originalX, originalY, originalZ, xpPerLocation); // Original location
+            spawnXpOrbs(requestingPlayer, targetPlayer.getX(), targetPlayer.getY(), targetPlayer.getZ(), xpPerLocation); // New location
         }
 
         cleanupPlayerState(playerUUID);
