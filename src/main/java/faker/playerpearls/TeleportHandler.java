@@ -31,7 +31,7 @@ public class TeleportHandler {
         int xpPerLocation = totalDrainedXp / 2;
 
         pendingPlayer.teleport(targetX, targetY, targetZ, true);
-        targetPlayer.sendMessage(Text.of("Accepted teleport."), false);
+        targetPlayer.sendMessage(Text.of("Accepted teleport"), true);
 
         pendingPlayer.getWorld().playSound(
                 null,
@@ -63,7 +63,7 @@ public class TeleportHandler {
         double lastPosZ = (double) state.get("lastPosZ");
 
         int levelsLost = originalLevel - pendingPlayer.experienceLevel;
-        boolean shouldCancel = levelsLost > EventHandler.MAX_XP_LOSS && pendingPlayer.experienceProgress <= originalProgress;
+        boolean shouldCancel = levelsLost >= EventHandler.MAX_XP_LOSS && pendingPlayer.experienceProgress <= originalProgress;
 
         double dx = lastPosX - pendingPlayer.getX();
         double dy = lastPosY - pendingPlayer.getY();
@@ -92,29 +92,45 @@ public class TeleportHandler {
                 1.0F
         );
 
+        int drainedXp = playerStateManager.getDrainedXP(playerUUID);
+        PearlUtils.spawnXpOrbs(player, player.getX(), player.getY(), player.getZ(), drainedXp / 3);
+
         playerStateManager.cleanupPlayerState(playerUUID);
+        player.sendMessage(Text.of("Teleport cancelled"), true);
     }
 
     // called each tick to drain xp from the pending player
     public void drainXp(ServerPlayerEntity player) {
-        int requiredXpForNextLevel = player.getNextLevelExperience();
-        int pointsToDrain = Math.max(1, (int) (requiredXpForNextLevel * EventHandler.DRAIN_RATE));
-        int currentLevelXp = (int) (player.experienceProgress * requiredXpForNextLevel);
         UUID playerUUID = player.getUuid();
+        int requiredXpForNextLevel = player.getNextLevelExperience();
+        double pointsToDrain = requiredXpForNextLevel * EventHandler.DRAIN_RATE;
 
-        playerStateManager.addDrainedXP(playerUUID, pointsToDrain); // collect total amount of xp drained
+        // add the current accumulated points to the new points to drain
+        double currentAccumulatedPoints = playerStateManager.getAccumulatedPoints(playerUUID);
+        currentAccumulatedPoints += pointsToDrain;
 
-        if (currentLevelXp >= pointsToDrain) {
-            player.addExperience(-pointsToDrain); // if the player has enough xp, drain it
-        } else if (player.experienceLevel > 0) {
-            // if the player doesn't have enough xp, remove the level, set to maximum points and keep draining
-            player.setExperienceLevel(player.experienceLevel - 1);
-            player.setExperiencePoints(player.getNextLevelExperience());
-            pointsToDrain = Math.max(1, (int) (player.getNextLevelExperience() * EventHandler.DRAIN_RATE));
-            player.addExperience(-pointsToDrain);
+        // only remove points if the accumulated points are greater than 1
+        if (currentAccumulatedPoints >= 1) {
+            int pointsToRemove = (int) currentAccumulatedPoints;
+            currentAccumulatedPoints -= pointsToRemove;
+
+            int currentLevelXp = (int) (player.experienceProgress * requiredXpForNextLevel);
+
+            playerStateManager.addDrainedXP(playerUUID, pointsToRemove); // collect total amount of xp drained
+
+            if (currentLevelXp >= pointsToRemove) {
+                player.addExperience(-pointsToRemove);
+            } else if (player.experienceLevel > 0) {
+                // if needed, reduce the level and set points back to 100%
+                player.setExperienceLevel(player.experienceLevel - 1);
+                player.setExperiencePoints(player.getNextLevelExperience());
+                player.addExperience(-pointsToRemove);
+            }
+
+            PearlUtils.playXpSound(player);
         }
 
-        PearlUtils.playXpSound(player);
+        playerStateManager.setAccumulatedPoints(playerUUID, currentAccumulatedPoints);
     }
 
 }

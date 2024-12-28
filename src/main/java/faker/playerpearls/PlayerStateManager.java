@@ -7,12 +7,14 @@ import java.util.Map;
 import java.util.UUID;
 
 public class PlayerStateManager {
+
     private static final Map<UUID, Integer> pendingPlayers = new HashMap<>();
 
     // xp related state
     private static final Map<UUID, Integer> originalXp = new HashMap<>();
     private static final Map<UUID, Float> originalProgress = new HashMap<>();
     private static final Map<UUID, Integer> drainedXpPoints = new HashMap<>();
+    private final Map<UUID, Double> accumulatedPoints = new HashMap<>(); // Track partial points
 
     // position related state
     private static final Map<UUID, Double> lastPosX = new HashMap<>();
@@ -40,6 +42,8 @@ public class PlayerStateManager {
         lastPosX.remove(playerUUID);
         lastPosY.remove(playerUUID);
         lastPosZ.remove(playerUUID);
+
+        clearAccumulatedPoints(playerUUID);
     }
 
     public boolean isPending(UUID playerUUID) {
@@ -52,6 +56,18 @@ public class PlayerStateManager {
 
     public int getDrainedXP(UUID playerUUID) {
         return drainedXpPoints.getOrDefault(playerUUID, 0);
+    }
+
+    public double getAccumulatedPoints(UUID playerUUID) {
+        return accumulatedPoints.getOrDefault(playerUUID, 0.0);
+    }
+
+    public void setAccumulatedPoints(UUID playerUUID, double amount) {
+        accumulatedPoints.put(playerUUID, amount);
+    }
+
+    public void clearAccumulatedPoints(UUID playerUUID) {
+        accumulatedPoints.remove(playerUUID);
     }
 
     public Map<String, Object> getPlayerState(UUID playerUUID) {

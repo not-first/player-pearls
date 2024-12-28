@@ -20,7 +20,7 @@ public class EventHandler {
 
     public static final double MOVEMENT_THRESHOLD = 2.0; // 2 block limit
 
-    public static final double DRAIN_RATE = 0.009; // 0.009 of the full bar every tick
+    public static final double DRAIN_RATE = 0.005; // 0.009 of the full bar every tick
     public static final int MAX_XP_LOSS = 5; // maximum loss of 5 xp levels
 
     private final PlayerStateManager playerStateManager;
@@ -58,7 +58,7 @@ public class EventHandler {
 
                             // if the player has no xp, don't allow them to teleport request
                             if (serverPlayer.experienceLevel <= 0) {
-                                serverPlayer.sendMessage(Text.of("Teleport cancelled due to lack of XP"), false);
+                                serverPlayer.sendMessage(Text.of("Teleport cancelled due to lack of XP"), true);
                                 world.playSound(
                                         null,
                                         serverPlayer.getX(),
@@ -122,10 +122,7 @@ public class EventHandler {
                                         .filter(ServerPlayerEntity::isSneaking)
                                         .filter(otherPlayer -> otherPlayer.getPitch(1.0F) >= LOOKING_DOWN_PITCH)  // Changed to looking down
                                         .findFirst()
-                                        .ifPresent(targetPlayer -> {
-                                            targetPlayer.sendMessage(Text.literal("Accepting teleport request..."), true);
-                                            teleportHandler.teleportPlayer(player, targetPlayer);
-                                        });
+                                        .ifPresent(targetPlayer -> teleportHandler.teleportPlayer(player, targetPlayer));
                             }
                         }
                 )

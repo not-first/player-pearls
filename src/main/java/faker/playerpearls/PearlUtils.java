@@ -11,7 +11,7 @@ public class PearlUtils {
 
     // spawn xp orbs given an amount and location
     public static void spawnXpOrbs(ServerPlayerEntity player, double x, double y, double z, int totalXp) {
-        int numOrbs = (int) (Math.random() * 11);
+        int numOrbs = 1 + (int) (Math.random() * 11);
         int xpPerOrb = Math.max(1, totalXp / numOrbs);
 
         for (int i = 0; i < numOrbs; i++) {
