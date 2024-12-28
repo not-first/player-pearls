@@ -9,7 +9,7 @@ A simple mechanic supported with sounds and particles to fit right into the game
 
 ![Teleportation example](https://i.imgur.com/SvOBVQG.gif)
 
-#### Pearl Requests
+### Pearl Requests
 **Sneak and throw a pearl straight up in the air to send out a teleport request, and enter a pending state.**
 
 ![Pending state example](https://i.imgur.com/THZBVUh.gif)
@@ -25,7 +25,7 @@ _A third of the lost xp is returned to the player when a request is cancelled._
 
 Once a player is in this state, they can be teleported if another player accepts their request.
 
-#### Accepting Requests
+### Accepting Requests
 **Sneak and look straight down to accept a pending request.**
 
 ![Accepting request example](https://i.imgur.com/dpPzQ71.gif)
