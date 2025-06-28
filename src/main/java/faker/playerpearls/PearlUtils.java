@@ -18,7 +18,7 @@ public class PearlUtils {
             double spreadX = x + (Math.random() - 0.5) * 2;
             double spreadZ = z + (Math.random() - 0.5) * 2;
             ExperienceOrbEntity orb = new ExperienceOrbEntity(
-                    player.getServerWorld(),
+                    player.getWorld(),
                     spreadX,
                     y + 0.5,
                     spreadZ,
